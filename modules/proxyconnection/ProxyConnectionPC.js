@@ -37,6 +37,8 @@ export default class ProxyConnectionPC {
      * connection should accept incoming video streams. Defaults to false.
      * @param {Function} options.onSendMessage - Callback to invoke when a
      * message has to be sent (signaled) out.
+     * @param {Function} options.onDataChannelMessage - FIXME.
+     * @param {Function} options.onDataChannelStatusChanged - FIXME.
      */
     constructor(options = {}) {
         this._options = {
@@ -113,7 +115,7 @@ export default class ProxyConnectionPC {
      * to add to the peer connection.
      * @returns {void}
      */
-    start(localTracks = []) {
+    start(localTracks = [], { openDataChannel }) {
         if (this._peerConnection) {
             return;
         }
@@ -122,7 +124,45 @@ export default class ProxyConnectionPC {
 
         this._peerConnection = this._createPeerConnection();
 
+        if (openDataChannel) {
+            this._dataChannel = this._peerConnection.openDataChannel('proxyConnectionDC', { reliable: true });
+            this._initDataChannel(this._dataChannel);
+        }
+
         this._peerConnection.invite(localTracks);
+    }
+
+    _handleDataChannelStatusChange() {
+        if (!this._dataChannel) {
+            return;
+        }
+
+        console.info(`DC STATUS CHANGED ${this._dataChannel.readyState}`);
+        if (this._options.onDataChannelStatusChanged) {
+            this._options.onDataChannelStatusChanged(this._dataChannel.readyState === 'open');
+        }
+    }
+
+    _initDataChannel(dataChannel) {
+        dataChannel.onmessage = event => {
+            const { target, data } = event;
+
+            console.info('ON DATA CHANNEL MESSAGE', data, target);
+
+            if (this._options.onDataChannelMessage) {
+                this._options.onDataChannelMessage(data);
+            }
+        };
+        dataChannel.onopen = this._handleDataChannelStatusChange.bind(this);
+        dataChannel.onclose = this._handleDataChannelStatusChange.bind(this);
+    }
+
+    sendDataChannelMessage(message) {
+        if (!this._dataChannel || !this._dataChannel.readyState === 'open') {
+            throw new Error('Data channel is not ready');
+        }
+
+        this._dataChannel.send(message);
     }
 
     /**
@@ -132,6 +172,10 @@ export default class ProxyConnectionPC {
      * @returns {void}
      */
     stop() {
+        if (this._dataChannel) {
+            this._dataChannel.close();
+            this._dataChannel = null;
+        }
         if (this._peerConnection) {
             this._peerConnection.terminate();
         }
@@ -341,6 +385,11 @@ export default class ProxyConnectionPC {
         }
 
         this._peerConnection = this._createPeerConnection();
+        this._peerConnection.peerconnection.ondatachannel = (event) => {
+            console.info('ONDATACHANNEL', event);
+            this._dataChannel = event.channel;
+            this._initDataChannel(this._dataChannel);
+        };
 
         this._peerConnection.acceptOffer(
             $jingle,

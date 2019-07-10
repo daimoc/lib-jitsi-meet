@@ -35,6 +35,8 @@ export default class ProxyConnectionService {
      * @param {Function} options.onSendMessage - Callback to invoke when a
      * message has to be sent (signaled) out. The arguments passed in are the
      * jid to send the message to and the message
+     * @param {Function} options.onDataChannelMessage - FIXME.
+     * @param {function} options.onDataChannelStatusChanged - FIXME.
      */
     constructor(options = {}) {
         const {
@@ -129,6 +131,13 @@ export default class ProxyConnectionService {
         return;
     }
 
+    sendDataChannelMessage(message) {
+        if (!this._peerConnection) {
+            throw new Error('PeerConnection is not ready yet');
+        }
+        this._peerConnection.sendDataChannelMessage(message);
+    }
+
     /**
      * Instantiates and initiates a proxy peer connection.
      *
@@ -138,13 +147,13 @@ export default class ProxyConnectionService {
      * send through to the peer.
      * @returns {void}
      */
-    start(peerJid, localTracks = []) {
+    start(peerJid, localTracks = [], { openDataChannel }) {
         this._peerConnection = this._createPeerConnection(peerJid, {
             isInitiator: true,
             receiveVideo: false
         });
 
-        this._peerConnection.start(localTracks);
+        this._peerConnection.start(localTracks, { openDataChannel });
     }
 
     /**
@@ -198,6 +207,8 @@ export default class ProxyConnectionService {
 
         const pcOptions = {
             iceConfig: this._options.iceConfig,
+            onDataChannelMessage: this._options.onDataChannelMessage,
+            onDataChannelStatusChanged: this._options.onDataChannelStatusChanged,
             onError: this._onFatalError,
             onRemoteStream: this._onRemoteStream,
             onSendMessage: this._onSendMessage,

@@ -34,7 +34,7 @@ function createConnection(token, bosh = '/http-bind') {
         bosh += `${bosh.indexOf('?') === -1 ? '?' : '&'}token=${token}`;
     }
 
-    const conn = new Strophe.Connection(bosh);
+    const conn = new Strophe.Connection(bosh, { keepalive: true });
 
     // The default maxRetries is 5, which is too long.
     conn.maxRetries = 3;
@@ -288,14 +288,24 @@ export default class XMPP extends Listenable {
                             timeSinceLastSuccess: this._lastSuccessTracker.getTimeSinceLastSuccess()
                         });
                 } else {
-                    this.eventEmitter.emit(
-                        JitsiConnectionEvents.CONNECTION_FAILED,
-                        JitsiConnectionErrors.CONNECTION_DROPPED_ERROR,
-                        errMsg || 'connection-dropped-error',
-                        /* credentials */ undefined,
-                        /* details */ {
-                            timeSinceLastSuccess: this._lastSuccessTracker.getTimeSinceLastSuccess()
-                        });
+                    const timeSinceLasSuccess = this._lastSuccessTracker.getTimeSinceLastSuccess();
+
+                    if (timeSinceLasSuccess >= 60 * 1000) {
+                        this.eventEmitter.emit(
+                            JitsiConnectionEvents.CONNECTION_FAILED,
+                            JitsiConnectionErrors.CONNECTION_DROPPED_ERROR,
+                            errMsg || 'connection-dropped-error',
+                            /* credentials */ undefined,
+                            /* details */ {
+                                timeSinceLastSuccess: this._lastSuccessTracker.getTimeSinceLastSuccess()
+                            });
+                    } else {
+                        logger.info(`Time since last success: ${timeSinceLasSuccess}`);
+                        setTimeout(() => {
+                            logger.info('Trying to restore BOSH connection...');
+                            this.connection.restore(undefined, this._connectionHandler);
+                        }, 5000);
+                    }
                 }
             }
         } else if (status === Strophe.Status.AUTHFAIL) {
@@ -344,13 +354,15 @@ export default class XMPP extends Listenable {
         this.anonymousConnectionFailed = false;
         this.connectionFailed = false;
         this.lastErrorMsg = undefined;
+        this._connectionHandler = this.connectionHandler.bind(this, {
+            jid,
+            password
+        });
+
         this.connection.connect(
             jid,
             password,
-            this.connectionHandler.bind(this, {
-                jid,
-                password
-            }));
+            this._connectionHandler);
     }
 
     /**

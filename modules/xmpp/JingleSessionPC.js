@@ -497,6 +497,10 @@ export default class JingleSessionPC extends JingleSession {
         }
     }
 
+    openDataChannel(label, options) {
+        return this.peerconnection.createDataChannel(label, options);
+    }
+
     /**
      * Sends given candidate in Jingle 'transport-info' message.
      * @param {RTCIceCandidate} candidate the WebRTC ICE candidate instance
